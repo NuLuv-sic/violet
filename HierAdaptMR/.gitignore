@@ -1,0 +1,17 @@
+# 忽略数据和缓存
+data/
+h5_dataset/
+*.pkl
+*.json
+
+# 忽略模型权重和日志
+*.pth
+*.tar
+*.log
+output/
+checkpoint_placeholder*
+
+# 忽略开发环境配置
+.vscode/
+__pycache__/
+.ipynb_checkpoints/

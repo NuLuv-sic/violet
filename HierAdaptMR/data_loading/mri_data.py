@@ -302,6 +302,8 @@ class CmrxReconSliceDataset(torch.utils.data.Dataset):
         if dataset_cache.get(root) is None or not use_dataset_cache:
 
             files = list(Path(root).iterdir())
+            # 过滤掉非 .h5 文件和由于错误拼接产生的通配符字符串
+            files = [f for f in files if f.suffix == '.h5' and '*' not in str(f)]
 
             for fname in sorted(files):
                 with h5py.File(fname, 'r') as hf:

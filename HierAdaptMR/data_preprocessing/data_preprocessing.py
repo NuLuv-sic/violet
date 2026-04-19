@@ -2,11 +2,16 @@ import os
 import glob
 import argparse
 import pathlib
+import sys
 from os.path import join
 import h5py
 import torch
 from tqdm import tqdm
-from fftc import ifft2c, rss_complex, load_kdata
+try:
+    from .fftc import ifft2c, rss_complex, load_kdata
+except (ImportError, SystemError):
+    sys.path.append(os.path.dirname(__file__))
+    from fftc import ifft2c, rss_complex, load_kdata
 import numpy as np
 
 def to_tensor(data: np.ndarray) -> torch.Tensor:
@@ -18,10 +23,10 @@ def to_tensor(data: np.ndarray) -> torch.Tensor:
 if __name__ == '__main__':
     # add argparse
     parser = argparse.ArgumentParser(description='Prepare H5 dataset for CMRxRecon series dataset')
-    parser.add_argument('--output_h5_folder', type=str, default='/media/ruru/ad31566c-e032-4ffa-a8cf-751b9dbab424/work/CMRxRecon2025/preprocess',
+    parser.add_argument('--output_h5_folder', type=str, default='/home/zb1/projects/hier_adapt_mr/violet/HierAdaptMR/h5_dataset',
                         help='path to save H5 dataset')
     parser.add_argument('--input_matlab_folder', type=str,
-                        default='/media/ruru/ad31566c-e032-4ffa-a8cf-751b9dbab424/work/CMRxRecon2025/ChallengeData/MultiCoil',
+                        default='/home/zb1/ChallengeData2025/ChallengeData/ChallengeData/MultiCoil',
                         help='path to the original matlab data')
     args = parser.parse_args()
 
@@ -37,7 +42,9 @@ if __name__ == '__main__':
     print('## step 1: convert matlab training dataset to h5 dataset')
 
     # file_list = sorted(glob.glob(join(mat_folder, '**/*','FullSample', '**/*', '**/*.mat')))
-    file_list = sorted(glob.glob(join(mat_folder, 'TrainingSet/FullSample', '**/*', '**/*.mat')))
+    file_list = sorted(glob.glob(os.path.join(mat_folder, '**/*.mat'), recursive=True))
+    file_list = file_list[:10]
+    print(f"Actually found {len(file_list)} files to process.")
     print('number of total matlab files: ', len(file_list))
 
     # check if cuda is available
@@ -48,7 +55,8 @@ if __name__ == '__main__':
 
     for ff in tqdm(file_list):
         ##* get info from path
-        save_name = ff.replace('/media/ruru/ad31566c-e032-4ffa-a8cf-751b9dbab424/work/CMRxRecon2025/ChallengeData/MultiCoil', 'MultiCoil').replace('.mat', '.h5')
+        path_parts = ff.split('/')
+        save_name = save_name = f"{path_parts[-4]}_{path_parts[-2]}_{path_parts[-1].replace('.mat', '.h5')}"
         save_name_file = join(save_folder, save_name)
         if not os.path.exists(pathlib.Path(save_name_file).parent):
             os.makedirs(pathlib.Path(save_name_file).parent)

@@ -1,3 +1,12 @@
+import sys
+import os
+os.environ["CUDA_VISIBLE_DEVICES"] = "3"  # 指定使用的GPU设备
+# 获取当前脚本所在目录
+current_dir = os.path.dirname(os.path.abspath(__file__))
+sys.path.append(current_dir)
+# 确保子目录也能被搜到
+sys.path.append(os.path.join(current_dir, 'data_loading'))
+sys.path.append(os.path.join(current_dir, 'data_preprocessing'))
 import pathlib
 from argparse import ArgumentParser
 from torch.utils.data import Subset
@@ -6,7 +15,12 @@ from torch.cuda.amp import  GradScaler
 import time
 from tqdm import tqdm
 import os
-from torch.utils.tensorboard import SummaryWriter
+# from torch.utils.tensorboard import SummaryWriter
+class SummaryWriter:
+    def __init__(self, *args, **kwargs): pass
+    def add_scalar(self, *args, **kwargs): pass
+    def add_image(self, *args, **kwargs): pass
+    def close(self): pass
 import logging
 from data_loading.transforms import CmrxReconDataTransform
 from data_loading.data_module import DataModule
@@ -231,7 +245,7 @@ def get_base_dataset(args, train=True):
 
     data_module = DataModule(
         slice_dataset='data_loading.mri_data.CmrxReconSliceDataset',
-        data_path=args.data_path,
+        data_path=pathlib.Path(args.data_path),
         train_transform=transform if train else None,
         val_transform=transform if not train else None,
         batch_size=args.batch_size,
@@ -329,8 +343,9 @@ def train_epoch(args, train_loader, model, optimizer, scaler, epoch, writer):
         # 取第3个线圈（索引2）
         # fully_kspace = torch.chunk(fully_kspace, 5, dim=1)[2]
 
-        with torch.cuda.amp.autocast():
-                recons_pred = model(masked_kspace, mask, filenames)
+      
+        with torch.amp.autocast('cuda'):
+            recons_pred = model(masked_kspace, mask, filenames)
 
         loss_recons_ssim = ssim_loss_fn(recons_pred.unsqueeze(1), target.unsqueeze(1), data_range=batch.max_value.to(args.device))
         # # 提取对比度类型用于损失计算
@@ -523,10 +538,14 @@ def cli_main(args):
     model = MultiCenterAdaptivePromptMR(base_promptmr_config).to(device)
 
     if args.use_checkpoint:
-        checkpoint = torch.load(args.pretrained, map_location=args.device, weights_only=True)
-        pretrained_state_dict = checkpoint['model_state_dict']
-        model.load_state_dict(pretrained_state_dict)
-        del checkpoint  # Release the memory used by the state_dict
+        try:
+            print(f"--- Attempting to load pretrained weights from: {args.pretrained} ---")
+            checkpoint = torch.load(args.pretrained, map_location=args.device, weights_only=True)
+            model.load_state_dict(checkpoint['model']) 
+            print("--- Pretrained weights loaded successfully! ---")
+        except Exception as e:
+            print(f"--- Warning: Could not load pretrained weights ({e}). Initializing with random weights for Pipeline testing. ---")
+        #del checkpoint  # Release the memory used by the state_dict
         torch.cuda.empty_cache()  # Clear the cache to free up memory
     else:
         print("  No pretrained model loaded!")
@@ -674,9 +693,9 @@ def log_dataset_statistics(dataset, logger):
 
 def build_args():
     parser = ArgumentParser()
-    parser.add_argument("--data_path", default=pathlib.Path('/media/ruru/ad31566c-e032-4ffa-a8cf-751b9dbab424/work/CMRxRecon2025/preprocess1'))
-    parser.add_argument("--experiments_output", default=pathlib.Path('/home/ruru/Documents/work/CMR2025/cmr2025_R1/output'))
-    parser.add_argument("--pretrained", default=pathlib.Path('/home/ruru/Documents/work/CMR2025/summary_results/backbone_promptmrV2/result8/checkpoint_epoch_0.pth.tar'))
+    parser.add_argument("--data_path", default=pathlib.Path('./h5_dataset'))
+    parser.add_argument("--experiments_output", default=pathlib.Path('./output'))
+    parser.add_argument("--pretrained", default=pathlib.Path('./checkpoint_placeholder.pth.tar'))
     parser.add_argument("--use_checkpoint", default=True, help="Use checkpoint (default: False)")
     parser.add_argument("--use_subset", default=True) 
     parser.add_argument("--subset_ratio", default=0.3)
@@ -692,7 +711,7 @@ def build_args():
     parser.add_argument("--seed", default=42, help="random seed")
     parser.add_argument("--max_epochs", default=20, type=int, help="max number of epochs")
     parser.add_argument('--num_low_frequencies', type=int, nargs='+', default=[20], help='Number of low frequency lines to sample')
-    parser.add_argument('--num_adj_slices', type=int, default=5, help='Number of adjacent slices for k-t sampling')
+    parser.add_argument('--num_adj_slices', type=int, default=1, help='Number of adjacent slices for k-t sampling')
     parser.add_argument('--task_type', type=str, default='regular_task1')
 
     args = parser.parse_args()

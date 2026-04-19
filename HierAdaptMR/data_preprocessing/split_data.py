@@ -4,8 +4,42 @@ import json
 import argparse
 from os.path import join
 import torch
-from creat_json import create_center_based_split
 import numpy as np
+def create_center_based_split(h5_folder):
+    """手动替代失踪的 creat_json 模块"""
+    # 搜索目录下所有的 h5 文件
+    files = glob.glob(os.path.join(h5_folder, "*.h5"))
+    if not files:
+        print(f"Error: No .h5 files found in {h5_folder}")
+        return
+
+    # 简单的 80/20 划分（针对你现在的 10 个文件）
+    files = sorted(files)
+    train_files = files[:8]  # 前 8 个给训练
+    val_files = files[8:]    # 后 2 个给验证
+
+    split_dict = {
+        "train": train_files,
+        "val": val_files
+    }
+
+    # 保存 JSON 到当前目录
+    save_path = "cmr25-cardiac.json"
+    with open(save_path, 'w', encoding='utf-8') as f:
+        json.dump(split_dict, f, indent=4)
+    
+    print(f"Successfully created {save_path} with {len(train_files)} train and {len(val_files)} val files.")
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--output_h5_folder', type=str, default='../h5_dataset')
+    args = parser.parse_args()
+
+    save_folder = args.output_h5_folder
+    
+    print('## step 2: create .json file (Internal Fix)')
+    create_center_based_split(save_folder)
+
 
 def to_tensor(data: np.ndarray) -> torch.Tensor:
     if np.iscomplexobj(data):
