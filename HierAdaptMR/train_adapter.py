@@ -1,3 +1,4 @@
+from torch.utils.checkpoint import checkpoint
 import sys
 import os
 os.environ["CUDA_VISIBLE_DEVICES"] = "3"  # 指定使用的GPU设备
@@ -396,6 +397,9 @@ def train_epoch(args, train_loader, model, optimizer, scaler, epoch, writer):
                 optimizer.step()
             optimizer.zero_grad()
 
+            #新增            
+            torch.cuda.empty_cache()  # 清理GPU缓存，防止内存泄漏
+
         running_loss += total_loss.item()
 
         #  保存最后一个有效batch的损失用于记录
@@ -452,8 +456,10 @@ def validate(args, val_loader, model, writer, epoch):
                     num_batches += 1
                     continue
 
-                with torch.cuda.amp.autocast():
-                        recons_pred = model(masked_kspace, mask, filenames)
+                with torch.amp.autocast('cuda'):
+                    # 使用 checkpoint 包装模型的前向传播
+                    # preserve_rng_state=False 可以减少额外计算开销，通常对于训练稳定性影响较小
+                    recons_pred = checkpoint(model, masked_kspace, mask, filenames, preserve_rng_state=False)
 
                 # 计算SSIM
                 ssim = 1- ssim_loss_fn(recons_pred.unsqueeze(1), target.unsqueeze(1),
@@ -515,7 +521,7 @@ def cli_main(args):
 
     # 使用多中心自适应模型
     base_promptmr_config = {
-        'num_cascades': 12,
+        'num_cascades': 6,
         'num_adj_slices': 5,
         'n_feat0': 48,
         'feature_dim': [72, 96, 120],
@@ -536,6 +542,14 @@ def cli_main(args):
     }
 
     model = MultiCenterAdaptivePromptMR(base_promptmr_config).to(device)
+
+    # 找到 model = MultiCenterAdaptivePromptMR(...) 这行代码之后，立即添加：
+    for name, param in model.named_parameters():
+        if 'adapter' not in name:  # 如果你的适配器参数包含 'adapter' 关键字
+            param.requires_grad = False
+        else:
+            param.requires_grad = True # 确保 adapter 参数被更新
+    print("已冻结 Backbone 参数，仅训练 Adapter，显存需求将大幅下降。")
 
     if args.use_checkpoint:
         try:
